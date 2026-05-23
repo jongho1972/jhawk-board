@@ -66,6 +66,7 @@ def init_db():
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_board_created ON posts(board, created_at)")
+        conn.execute("PRAGMA journal_mode=WAL")  # 동시 읽기/쓰기 잠금 완화
         conn.commit()
 
 
@@ -88,12 +89,17 @@ def require_key(key: str):
         raise HTTPException(status_code=401, detail="invalid key")
 
 
-# 아주 단순한 IP별 분당 쓰기 제한 (가족용 수준의 스팸 방지)
+# 아주 단순한 IP별 분당 쓰기 제한 (가족용 수준의 스팸 방지).
+# 단일 워커 전제(Dockerfile). --workers N 추가 시 워커별 카운트라 한도가 느슨해짐.
 _hits: dict[str, list[float]] = {}
 
 
 def throttle(ip: str, limit: int = 20):
     now = time.time()
+    # 오래된 IP 키 누적 방지: 키가 많이 쌓이면 만료된 항목 정리
+    if len(_hits) > 256:
+        for k in [k for k, v in _hits.items() if all(now - t >= 60 for t in v)]:
+            del _hits[k]
     recent = [t for t in _hits.get(ip, []) if now - t < 60]
     if len(recent) >= limit:
         raise HTTPException(status_code=429, detail="too many requests")
