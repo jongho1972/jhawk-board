@@ -21,16 +21,17 @@
 |--------|------|------|
 | GET  | `/healthz` | 헬스체크 |
 | GET  | `/api/{board}/posts` | 게시물 목록(최신순, 최대 200) |
-| POST | `/api/{board}/posts` | 게시물 등록 (헤더 `X-Board-Key`) |
-| DELETE | `/api/{board}/posts/{id}` | 게시물 삭제 (헤더 `X-Board-Key`) |
+| POST | `/api/{board}/posts` | 게시물 등록 (헤더 `X-Board-Key` = `BOARD_KEY`) |
+| DELETE | `/api/{board}/posts/{id}` | 게시물 삭제 (헤더 `X-Board-Key` = **`BOARD_ADMIN_KEY`**, 미설정 시 `BOARD_KEY` 폴백) |
 
 POST 본문:
 ```json
 { "name": "이름(선택, 20자)", "kind": "add|remove|etc", "text": "내용(1~500자)" }
 ```
 
-- `BOARD_KEY`가 설정돼 있으면 POST/DELETE에 `X-Board-Key` 헤더 일치 필요(GET은 공개).
-- 키는 클라이언트(정적 HTML)에 박혀 공개되므로 *비밀*이 아니라 봇 스팸 차단용. 실제 접근 제한은 페이지 비밀번호 게이트가 담당.
+- `BOARD_KEY`가 설정돼 있으면 POST에 `X-Board-Key` 헤더 일치 필요(GET은 공개).
+- `BOARD_KEY`는 클라이언트(정적 HTML)에 박혀 공개되므로 *비밀*이 아니라 봇 스팸 차단용.
+- `BOARD_ADMIN_KEY`(삭제 전용)는 **페이지 소스에 노출하지 않는다** — 공개 페이지에서도 관리자만 삭제 가능. 프론트는 삭제 시 키를 prompt로 입력받는다. 미설정 시 `BOARD_KEY` 폴백(구버전 호환).
 - IP별 분당 20건 쓰기 제한.
 
 ## 로컬 실행

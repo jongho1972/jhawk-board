@@ -4,10 +4,12 @@
 첫 사용처: 전라도 가족여행 지도(tour_jeolla) 의 '추가·삭제 의견' 게시판.
 
 환경변수
-  BOARD_DB       SQLite 경로 (기본 /data/board.db, 볼륨 마운트)
-  BOARD_KEY      쓰기(POST/DELETE) 보호 키. 비우면 검증 생략
-  BOARD_NAMES    허용 게시판 이름(쉼표구분, 기본 "jeolla")
-  BOARD_ORIGINS  CORS 허용 오리진(쉼표구분)
+  BOARD_DB         SQLite 경로 (기본 /data/board.db, 볼륨 마운트)
+  BOARD_KEY        쓰기(POST) 보호 키. 비우면 검증 생략
+  BOARD_ADMIN_KEY  삭제(DELETE) 전용 관리자 키. 페이지 소스에 노출하지 않는다.
+                   비우면 BOARD_KEY로 폴백(기존 동작 유지)
+  BOARD_NAMES      허용 게시판 이름(쉼표구분, 기본 "jeolla")
+  BOARD_ORIGINS    CORS 허용 오리진(쉼표구분)
 """
 import os
 import re
@@ -21,6 +23,7 @@ from pydantic import BaseModel, Field
 
 DB_PATH = os.environ.get("BOARD_DB", "/data/board.db")
 BOARD_KEY = os.environ.get("BOARD_KEY", "")
+BOARD_ADMIN_KEY = os.environ.get("BOARD_ADMIN_KEY", "")
 ALLOWED_BOARDS = {b.strip() for b in os.environ.get("BOARD_NAMES", "jeolla").split(",") if b.strip()}
 ALLOWED_ORIGINS = [
     o.strip()
@@ -89,6 +92,13 @@ def require_key(key: str):
         raise HTTPException(status_code=401, detail="invalid key")
 
 
+def require_admin_key(key: str):
+    # 삭제는 관리자 키만 허용. 미설정 시 BOARD_KEY로 폴백(기존 게시판 호환)
+    admin = BOARD_ADMIN_KEY or BOARD_KEY
+    if admin and key != admin:
+        raise HTTPException(status_code=401, detail="invalid admin key")
+
+
 # 아주 단순한 IP별 분당 쓰기 제한 (가족용 수준의 스팸 방지).
 # 단일 워커 전제(Dockerfile). --workers N 추가 시 워커별 카운트라 한도가 느슨해짐.
 _hits: dict[str, list[float]] = {}
@@ -147,7 +157,7 @@ def create_post(board: str, post: PostIn, request: Request, x_board_key: str = H
 @app.delete("/api/{board}/posts/{post_id}")
 def delete_post(board: str, post_id: int, x_board_key: str = Header(default="")):
     require_board(board)
-    require_key(x_board_key)
+    require_admin_key(x_board_key)
     with closing(db()) as conn:
         cur = conn.execute("DELETE FROM posts WHERE board=? AND id=?", (board, post_id))
         conn.commit()
