@@ -14,6 +14,7 @@
 import os
 import re
 import time
+import secrets
 import sqlite3
 from contextlib import closing
 
@@ -88,14 +89,14 @@ def require_board(board: str):
 
 
 def require_key(key: str):
-    if BOARD_KEY and key != BOARD_KEY:
+    if BOARD_KEY and not secrets.compare_digest(key, BOARD_KEY):
         raise HTTPException(status_code=401, detail="invalid key")
 
 
 def require_admin_key(key: str):
     # 삭제는 관리자 키만 허용. 미설정 시 BOARD_KEY로 폴백(기존 게시판 호환)
     admin = BOARD_ADMIN_KEY or BOARD_KEY
-    if admin and key != admin:
+    if admin and not secrets.compare_digest(key, admin):
         raise HTTPException(status_code=401, detail="invalid admin key")
 
 
@@ -155,8 +156,9 @@ def create_post(board: str, post: PostIn, request: Request, x_board_key: str = H
 
 
 @app.delete("/api/{board}/posts/{post_id}")
-def delete_post(board: str, post_id: int, x_board_key: str = Header(default="")):
+def delete_post(board: str, post_id: int, request: Request, x_board_key: str = Header(default="")):
     require_board(board)
+    throttle(request.client.host if request.client else "?")  # 관리자 키 무차별 대입 방어
     require_admin_key(x_board_key)
     with closing(db()) as conn:
         cur = conn.execute("DELETE FROM posts WHERE board=? AND id=?", (board, post_id))
